@@ -59,9 +59,7 @@ namespace DnstapLogger
 
             var messageText = formatter(state, exception);
 
-            var now = DateTimeOffset.UtcNow;
-            ulong seconds = (ulong)now.ToUnixTimeSeconds();
-            uint nanos = (uint)((now.ToUnixTimeMilliseconds() % 1000) * 1_000_000);
+            var (sec, nsec) = UnixTime.GetTimestamp();
 
             // Build DNSTAP message
             var dnstap = new DnstapMessage(new Dnstap
@@ -72,8 +70,8 @@ namespace DnstapLogger
                 Message = new Message
                 {
                     Type = MessageType.ToolQuery,
-                    QueryTimeSec = seconds,
-                    QueryTimeNsec = nanos,
+                    QueryTimeSec = sec,
+                    QueryTimeNsec = nsec,
                     QueryMessage = messageText != null
                         ? System.Text.Encoding.UTF8.GetBytes(messageText)
                         : null,

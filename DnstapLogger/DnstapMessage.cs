@@ -27,7 +27,7 @@ namespace DnstapLogger
             uint? responsePort = null,
             string? responseMessage = null)
         {
-            var now = GetUnixTimestampParts();
+            var (sec, nsec) = UnixTime.GetTimestamp();
             _payload = new Dnstap
             {
                 Type = DnstapType.Message,
@@ -42,28 +42,14 @@ namespace DnstapLogger
                     QueryAddress = queryAddress.GetAddressBytes(),
                     QueryPort = queryPort,
                     QueryMessage = Encoding.UTF8.GetBytes(queryMessage),
-                    QueryTimeSec = now.Seconds,
-                    QueryTimeNsec = now.Nanoseconds,
+                    QueryTimeSec = sec,
+                    QueryTimeNsec = nsec,
                     QueryZone = queryZone != null ? Encoding.UTF8.GetBytes(queryZone) : null,
                     ResponseAddress = responseAddress?.GetAddressBytes(),
                     ResponsePort = responsePort,
                     ResponseMessage = responseMessage != null ? Encoding.UTF8.GetBytes(responseMessage) : null
                 }
             };
-        }
-
-        private static (ulong Seconds, uint Nanoseconds) GetUnixTimestampParts()
-        {
-            var now = DateTime.UtcNow;
-
-            long seconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-
-            long ticksSinceEpoch = now.Ticks - DateTime.UnixEpoch.Ticks;
-            long ticksIntoSecond = ticksSinceEpoch % TimeSpan.TicksPerSecond;
-
-            uint nanos = (uint)(ticksIntoSecond * 100);
-
-            return ((ulong)seconds, nanos);
         }
 
         public override string? ToString()
