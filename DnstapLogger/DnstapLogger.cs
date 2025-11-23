@@ -6,31 +6,30 @@ namespace DnstapLogger
 {
     /// <summary>
     /// An implementation of <see cref="ILogger"/> that sends log
-    /// events as DNSTAP messages.  Each call to <see
-    /// cref="Log"/> serialises a DNSTAP message and writes it via
-    /// the shared <see cref="DnstapWriter"/>.  The mapping from
-    /// log level to DNSTAP message type is deliberately simple:
-    /// messages are represented as TOOL_QUERY events with the log
-    /// message stored verbatim in the QueryMessage field.  The
-    /// timestamp is taken at the moment of logging.  Only events
-    /// with severity greater than or equal to the configured
-    /// minimum level are sent.
+    /// events as DNSTAP messages.  Each call to <see cref="Log"/>
+    /// enqueues a DNSTAP message for asynchronous writing via a
+    /// shared <see cref="DnstapLogDispatcher"/>.
     /// </summary>
     internal sealed class DnstapLogger : ILogger
     {
-        private readonly DnstapWriter _writer;
-        private readonly byte[] _identity;
-        private readonly byte[] _version;
+        private readonly DnstapLogDispatcher _dispatcher;
+        private readonly byte[]? _identity;
+        private readonly byte[]? _version;
         private readonly LogLevel _minLevel;
         private readonly string _category;
 
-        public DnstapLogger(DnstapWriter writer, byte[] identity, byte[] version, LogLevel minLevel, string category)
+        public DnstapLogger(
+            DnstapLogDispatcher dispatcher,
+            byte[]? identity,
+            byte[]? version,
+            LogLevel minLevel,
+            string category)
         {
-            _writer = writer;
+            _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
             _identity = identity;
             _version = version;
             _minLevel = minLevel;
-            _category = category;
+            _category = category ?? throw new ArgumentNullException(nameof(category));
         }
 
         public IDisposable BeginScope<TState>(TState state)
@@ -44,14 +43,26 @@ namespace DnstapLogger
             return logLevel >= _minLevel;
         }
 
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception exception,
+            Func<TState, Exception, string> formatter)
         {
             if (!IsEnabled(logLevel))
             {
                 return;
             }
+
             ArgumentNullException.ThrowIfNull(formatter);
+
             var messageText = formatter(state, exception);
+
+            var now = DateTimeOffset.UtcNow;
+            ulong seconds = (ulong)now.ToUnixTimeSeconds();
+            uint nanos = (uint)((now.ToUnixTimeMilliseconds() % 1000) * 1_000_000);
+
             // Build DNSTAP message
             var dnstap = new DnstapMessage(new Dnstap
             {
@@ -61,15 +72,17 @@ namespace DnstapLogger
                 Message = new Message
                 {
                     Type = MessageType.ToolQuery,
-                    QueryTimeSec = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                    QueryTimeNsec = (uint)(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() % 1000 * 1_000_000),
-                    QueryMessage = messageText != null ? System.Text.Encoding.UTF8.GetBytes(messageText) : null,
+                    QueryTimeSec = seconds,
+                    QueryTimeNsec = nanos,
+                    QueryMessage = messageText != null
+                        ? System.Text.Encoding.UTF8.GetBytes(messageText)
+                        : null,
                 }
             });
-            // Write asynchronously but wait synchronously to preserve
-            // logger contract.  Exceptions thrown during writing will
-            // propagate to the caller.
-            _writer.WriteMessageAsync(dnstap).GetAwaiter().GetResult();
+
+            // Enqueue for asynchronous writing. This is non-blocking and
+            // does not synchronously wait on I/O.
+            _dispatcher.Enqueue(dnstap);
         }
 
         private class NullScope : IDisposable
@@ -77,7 +90,8 @@ namespace DnstapLogger
             public static readonly NullScope Instance = new NullScope();
 
             public void Dispose()
-            { }
+            {
+            }
         }
     }
 }
