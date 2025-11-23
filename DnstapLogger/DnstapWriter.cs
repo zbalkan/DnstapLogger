@@ -1,5 +1,4 @@
 using DnstapLogger.FrameStreams;
-using ProtoBuf;
 using System;
 using System.IO;
 using System.Net.Sockets;
@@ -129,9 +128,7 @@ namespace DnstapLogger
             if (!_started)
                 await StartAsync(cancellationToken).ConfigureAwait(false);
 
-            using var ms = new MemoryStream();
-            Serializer.Serialize(ms, dnstapMessage.Payload);
-            var payload = ms.ToArray();
+            var payload = dnstapMessage.Serialize();
 
             await _writer.WriteDataFrameAsync(payload, cancellationToken).ConfigureAwait(false);
         }

@@ -1,5 +1,7 @@
 using DnstapLogger.Protocol;
+using ProtoBuf;
 using System;
+using System.IO;
 using System.Net;
 using System.Text;
 
@@ -7,11 +9,11 @@ namespace DnstapLogger
 {
     public class DnstapMessage
     {
-        internal Dnstap Payload { get; }
+        private readonly Dnstap _payload;
 
         internal DnstapMessage(Dnstap dnstap)
         {
-            Payload = dnstap;
+            _payload = dnstap;
         }
 
         public DnstapMessage(string queryMessage,
@@ -26,8 +28,12 @@ namespace DnstapLogger
             string? responseMessage = null)
         {
             var now = GetUnixTimestampParts();
-            Payload = new Dnstap
+            _payload = new Dnstap
             {
+                Type = DnstapType.Message,
+                Identity = IntToBytes(1),
+                Version = IntToBytes(2),
+                Extra = IntToBytes(3),
                 Message = new Message
                 {
                     Type = queryType,
@@ -62,11 +68,26 @@ namespace DnstapLogger
 
         public override string? ToString()
         {
-            var name = nameof(Payload.Message.Type);
-            var message = Encoding.UTF8.GetString(Payload.Message.QueryMessage);
-            var host = new IPAddress(Payload.Message.QueryAddress).ToString();
-            var port = Payload.Message.QueryPort;
+            var name = nameof(_payload.Message.Type);
+            var message = Encoding.UTF8.GetString(_payload.Message.QueryMessage);
+            var host = new IPAddress(_payload.Message.QueryAddress).ToString();
+            var port = _payload.Message.QueryPort;
             return $"{host}:{port}\t{name}\t{message}";
+        }
+
+        private static byte[] IntToBytes(int value)
+        {
+            byte[] intBytes = BitConverter.GetBytes(value);
+            if (BitConverter.IsLittleEndian)
+                Array.Reverse(intBytes);
+            return intBytes;
+        }
+
+        public byte[] Serialize()
+        {
+            using var ms = new MemoryStream();
+            Serializer.Serialize(ms, _payload);
+            return ms.ToArray();
         }
     }
 }
