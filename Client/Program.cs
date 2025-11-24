@@ -1,5 +1,7 @@
 ﻿using DnstapLogger;
+using DnstapLogger.Protocol;
 using Microsoft.Extensions.Logging;
+using ARSoft.Tools.Net.Dns;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -23,6 +25,7 @@ namespace Client
             var version = options.TryGetValue("version", out var ver) ? ver : null;
 
             DnstapWriter writer;
+
             if (target == "file")
             {
                 if (!options.TryGetValue("file", out var filePath))
@@ -31,7 +34,6 @@ namespace Client
                     return 1;
                 }
 
-                // file writers require no handshake
                 writer = DnstapWriter.CreateFileWriter(filePath);
             }
             else
@@ -47,33 +49,30 @@ namespace Client
                 writer = await DnstapWriter.ConnectTcpAsync(host, port);
             }
 
-            // We can use direct writes or a logging provider
             using (writer)
-            //using (var provider = new DnstapLoggerProvider(writer, identity, version, LogLevel.Information))
             {
                 await writer.StartAsync();
-                //var logger = provider.CreateLogger("Client");
 
                 for (var i = 1; i <= 100; i++)
                 {
+                    // ------------------------------------------------------------------
+                    // CREATE A DNSTAP MESSAGE WITH WIRE-FORMAT QUERY
+                    // ------------------------------------------------------------------
                     var msg = new DnstapMessage(
-                        queryMessage: $"\u0000\u0000 wire-format mock query #{i}",
+                        queryMessage: "example.com",              // <--- REAL DNS WIREFORMAT
+                        queryType: MessageType.ToolQuery,   // TOOL_QUERY is fine, spec-compliant
                         queryAddress: IPAddress.Parse("192.0.2.100"),
                         queryPort: 54321,
-                        queryZone: "example.com",
-                        responseAddress: IPAddress.Parse("192.0.2.1"),
-                        responsePort: 53);
+                        queryZone: "example.com"            // wrapper converts to DNS NAME correctly
+                    );
+
                     await writer.WriteMessageAsync(msg);
 
-                    //logger.LogInformation(msg.ToString());
-                    await Task.Delay(100); // simulate some delay between messages
+                    await Task.Delay(100); // simulate async workload
                 }
 
-                // send STOP and flush
                 await writer.StopAsync();
-
-                // give OS time to flush TCP buffers before exiting
-                await Task.Delay(200);
+                await Task.Delay(200); // allow socket flush
             }
 
             return 0;

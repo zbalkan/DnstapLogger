@@ -1,6 +1,7 @@
 using DnstapLogger.Protocol;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Text;
 
 namespace DnstapLogger
 {
@@ -67,15 +68,7 @@ namespace DnstapLogger
                 Type = DnstapType.Message,
                 Identity = _identity,
                 Version = _version,
-                Message = new Message
-                {
-                    Type = MessageType.ToolQuery,
-                    QueryTimeSec = sec,
-                    QueryTimeNsec = nsec,
-                    QueryMessage = messageText != null
-                        ? System.Text.Encoding.UTF8.GetBytes(messageText)
-                        : null,
-                }
+                Extra = messageText != null ? Encoding.UTF8.GetBytes(messageText) : null,
             });
 
             // Enqueue for asynchronous writing. This is non-blocking and
